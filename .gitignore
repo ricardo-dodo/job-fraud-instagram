@@ -1,4 +1,7 @@
 .env
 node_modules
 .next
-
+instagram_images
+instagram_posts.csv
+instagram_posts.log
+instagram_scraper.log
