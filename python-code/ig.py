@@ -22,14 +22,46 @@ class InstagramScraper:
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logging.getLogger().addHandler(file_handler)
 
+    async def check_for_login_prompt(self, page):
+        try:
+            login_prompt = await page.wait_for_selector('text="Log in to Instagram"', timeout=5000)
+            if login_prompt:
+                logging.warning("Login prompt detected. Please log in manually.")
+                input("Press Enter after you've logged in...")
+                await page.reload()
+                await page.wait_for_load_state('networkidle')
+                return True
+        except TimeoutError:
+            pass  # No login prompt found, which is fine
+        return False
+
     async def get_posts(self, page):
         await page.goto(f"{self.BASE_URL}/{self.PROFILE}/")
         await page.wait_for_load_state('networkidle')
         
-        # Scroll down a few times to load more posts
-        for _ in range(3):
+        while True:
+            # Scroll to bottom
+            previous_height = await page.evaluate('document.body.scrollHeight')
             await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-            await page.wait_for_timeout(1000)  # Wait for 1 second after each scroll
+            await page.wait_for_timeout(2000)  # Wait for 2 seconds after scrolling
+            
+            # Check for login prompt
+            login_detected = await self.check_for_login_prompt(page)
+            if login_detected:
+                continue  # Start the loop again to retry scrolling
+            
+            # Check for "Show more posts" button
+            show_more_button = await page.query_selector('text="Show more posts from loker_it"')
+            if show_more_button:
+                await show_more_button.click()
+                await page.wait_for_load_state('networkidle')
+                continue  # Start the loop again to scroll further
+            
+            # Check if we've reached the end
+            new_height = await page.evaluate('document.body.scrollHeight')
+            if new_height == previous_height:
+                # If no new content loaded after scrolling, we've reached the end
+                break
 
         posts = await page.evaluate('''
             () => {
