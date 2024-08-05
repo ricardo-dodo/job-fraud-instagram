@@ -69,37 +69,19 @@ class InstagramScraper:
                 await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
                 await page.wait_for_timeout(1000)  # Wait for 1 second after each scroll
 
-            # Extract comments
+            # Extract comments using the alternative method, filtering out "No text" comments
             comments = await page.evaluate('''
                 () => {
-                    const comments = Array.from(document.querySelectorAll('ul[class*="x78zum5"] > ul > div'));
+                    const comments = Array.from(document.querySelectorAll('ul > div > li'));
                     return comments.map(comment => {
-                        const username = comment.querySelector('a.x1i10hfl')?.innerText || 'Unknown';
-                        const text = comment.querySelector('div[class*="_a9zs"]')?.innerText || 'No text';
+                        const username = comment.querySelector('a')?.innerText || 'Unknown';
+                        const text = comment.querySelector('div > div > div > span')?.innerText || '';
                         return {username, text};
-                    });
+                    }).filter(comment => comment.text !== '' && comment.text !== 'No text');
                 }
             ''')
             
-            logging.info(f"Extracted {len(comments)} comments for post: {url}")
-
-            # If no comments were found, try an alternative method
-            if len(comments) == 0:
-                logging.info("Attempting alternative comment extraction method")
-                comments = await page.evaluate('''
-                    () => {
-                        const comments = Array.from(document.querySelectorAll('ul > div > li'));
-                        return comments.map(comment => {
-                            const username = comment.querySelector('a')?.innerText || 'Unknown';
-                            const text = comment.querySelector('div > div > div > span')?.innerText || 'No text';
-                            return {username, text};
-                        });
-                    }
-                ''')
-                logging.info(f"Alternative method extracted {len(comments)} comments for post: {url}")
-
-            # Take a debug screenshot
-            await page.screenshot(path=f"debug_{int(time.time())}.png", full_page=True)
+            logging.info(f"Extracted {len(comments)} valid comments for post: {url}")
 
             # Take screenshot of the post image
             img = await page.query_selector('article img')
@@ -110,15 +92,6 @@ class InstagramScraper:
             else:
                 filename = "N/A"
                 logging.error(f"No image found for post: {url}")
-
-            # Log the HTML structure for debugging
-            html_structure = await page.evaluate('''
-                () => {
-                    return document.body.innerHTML;
-                }
-            ''')
-            with open(f"debug_html_{int(time.time())}.html", "w", encoding="utf-8") as f:
-                f.write(html_structure)
 
             return {
                 'url': url,
@@ -148,26 +121,30 @@ class InstagramScraper:
                 logging.info(f"Processing post: {post_url}")
                 post_data = await self.extract_post_data(page, post_url)
                 if post_data:
-                    # Write the main post data
-                    writer.writerow([
-                        post_data['url'],
-                        post_data['content'],
-                        post_data['likes'],
-                        post_data['filename'],
-                        '',  # Empty username for the main post
-                        ''   # Empty comment text for the main post
-                    ])
-                    # Write each comment separately
-                    for comment in post_data['comments']:
+                    valid_comments = [c for c in post_data['comments'] if c['text'] != 'No text']
+                    if valid_comments:
+                        # Write each valid comment with post data
+                        for comment in valid_comments:
+                            writer.writerow([
+                                post_data['url'],
+                                post_data['content'],
+                                post_data['likes'],
+                                post_data['filename'],
+                                comment['username'],
+                                comment['text']
+                            ])
+                        logging.info(f"Processed post {post_url} with {len(valid_comments)} valid comments")
+                    else:
+                        # If there are no valid comments, still write the post data with empty comment fields
                         writer.writerow([
                             post_data['url'],
-                            '',  # Empty content for comments
-                            '',  # Empty likes for comments
-                            '',  # Empty filename for comments
-                            comment['username'],
-                            comment['text']
+                            post_data['content'],
+                            post_data['likes'],
+                            post_data['filename'],
+                            '',  # Empty username for posts without valid comments
+                            ''   # Empty comment text for posts without valid comments
                         ])
-                    logging.info(f"Processed post {post_url} with {len(post_data['comments'])} comments")
+                        logging.info(f"Processed post {post_url} with no valid comments")
                 else:
                     logging.error(f"Failed to process post: {post_url}")
                 await asyncio.sleep(random.uniform(1, 3))
