@@ -1,191 +1,191 @@
 import csv
 import time
-import requests
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
-from selenium.webdriver.chrome.service import Service
 import os
-from PIL import Image
-from io import BytesIO
+import random
+import logging
+import asyncio
+from playwright.async_api import async_playwright, TimeoutError
 from dotenv import load_dotenv
 
 class InstagramScraper:
     def __init__(self):
         load_dotenv()
-        self.USERNAME = os.getenv("INSTAGRAM_USERNAME")
-        self.PASSWORD = os.getenv("INSTAGRAM_PASSWORD")
         self.BASE_URL = "https://www.instagram.com"
         self.PROFILE = "loker_it"
         self.CSV_FILE = "instagram_posts.csv"
-        self.SCROLL_PAUSE_TIME = 2
+        self.IMAGE_DIR = "instagram_images"
+        self.setup_logging()
+
+    def setup_logging(self):
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        file_handler = logging.FileHandler('instagram_scraper.log')
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logging.getLogger().addHandler(file_handler)
+
+    async def get_posts(self, page):
+        await page.goto(f"{self.BASE_URL}/{self.PROFILE}/")
+        await page.wait_for_load_state('networkidle')
         
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service)
-        self.wait = WebDriverWait(self.driver, 3)
+        # Scroll down a few times to load more posts
+        for _ in range(3):
+            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await page.wait_for_timeout(1000)  # Wait for 1 second after each scroll
 
-    def login(self):
-        self.driver.get(f"{self.BASE_URL}/accounts/login/")
-        self.wait.until(EC.presence_of_element_located((By.NAME, "username"))).send_keys(self.USERNAME)
-        self.driver.find_element(By.NAME, "password").send_keys(self.PASSWORD + Keys.RETURN)
-        time.sleep(5)  # Wait for login to complete
+        posts = await page.evaluate('''
+            () => {
+                const links = Array.from(document.querySelectorAll('article a'));
+                return links.map(link => link.href).filter(href => href.includes('/p/'));
+            }
+        ''')
+        logging.info(f"Found {len(posts)} posts")
+        return posts
 
-    def navigate_to_profile(self):
-        self.driver.get(f"{self.BASE_URL}/{self.PROFILE}/")
-
-    @staticmethod
-    def download_image(url, filename):
+    async def extract_post_data(self, page, url):
+        await page.goto(url)
+        await page.wait_for_load_state('networkidle')
+        
         try:
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
+            # Wait for the content to load
+            await page.wait_for_selector('article', timeout=10000)
 
-            with open(filename, 'wb') as file:
-                for chunk in response.iter_content(chunk_size=8192):
-                    file.write(chunk)
+            # Extract post content
+            post_content = await page.evaluate('''
+                () => {
+                    const contentElement = document.querySelector('div[class*="_a9zs"]');
+                    return contentElement ? contentElement.innerText : 'No content found';
+                }
+            ''')
 
-            print(f"Image downloaded: {filename}")
-        except requests.exceptions.RequestException as e:
-            print(f"Failed to download image: {e}")
+            # Extract likes (this might not be visible for all posts)
+            likes = "N/A"
+            try:
+                likes_element = await page.wait_for_selector('section span', timeout=5000)
+                likes = await likes_element.inner_text()
+            except TimeoutError:
+                logging.warning(f"Likes not found for post: {url}")
 
-    def get_posts(self):
-        return self.wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "article div img")))
+            # Scroll to load more comments
+            for _ in range(3):  # Adjust this number to scroll more or less
+                await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                await page.wait_for_timeout(1000)  # Wait for 1 second after each scroll
 
-    @staticmethod
-    def combine_images_vertically(images_list):
-        imgs = [Image.open(BytesIO(requests.get(url).content)) for url in images_list]
-        max_width = max(i.width for i in imgs)
-        total_height = sum(i.height for i in imgs)
-        combined_image = Image.new('RGB', (max_width, total_height))
-        y_offset = 0
-        for img in imgs:
-            combined_image.paste(img, (0, y_offset))
-            y_offset += img.height
-        return combined_image
-
-    def scroll_to_end(self):
-        last_height = self.driver.execute_script("return document.body.scrollHeight")
-        
-        while True:
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(self.SCROLL_PAUSE_TIME)
-            new_height = self.driver.execute_script("return document.body.scrollHeight")
+            # Extract comments
+            comments = await page.evaluate('''
+                () => {
+                    const comments = Array.from(document.querySelectorAll('ul[class*="x78zum5"] > ul > div'));
+                    return comments.map(comment => {
+                        const username = comment.querySelector('a.x1i10hfl')?.innerText || 'Unknown';
+                        const text = comment.querySelector('div[class*="_a9zs"]')?.innerText || 'No text';
+                        return {username, text};
+                    });
+                }
+            ''')
             
-            if new_height == last_height:
-                try:
-                    load_more_button = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[text()='Load More']")))
-                    load_more_button.click()
-                    time.sleep(self.SCROLL_PAUSE_TIME)
-                    last_height = self.driver.execute_script("return document.body.scrollHeight")
-                except TimeoutException:
-                    print("Reached the end of the page or there is no 'Load More' button.")
-                    self.driver.execute_script("window.scrollTo(0, 0);")
-                    time.sleep(self.SCROLL_PAUSE_TIME)
-                    new_height = self.driver.execute_script("return document.body.scrollHeight")
-                    if new_height == last_height:
-                        print("Confirmed the end of the page after scrolling back to the top.")
-                        break
-                    else:
-                        last_height = new_height
+            logging.info(f"Extracted {len(comments)} comments for post: {url}")
+
+            # If no comments were found, try an alternative method
+            if len(comments) == 0:
+                logging.info("Attempting alternative comment extraction method")
+                comments = await page.evaluate('''
+                    () => {
+                        const comments = Array.from(document.querySelectorAll('ul > div > li'));
+                        return comments.map(comment => {
+                            const username = comment.querySelector('a')?.innerText || 'Unknown';
+                            const text = comment.querySelector('div > div > div > span')?.innerText || 'No text';
+                            return {username, text};
+                        });
+                    }
+                ''')
+                logging.info(f"Alternative method extracted {len(comments)} comments for post: {url}")
+
+            # Take a debug screenshot
+            await page.screenshot(path=f"debug_{int(time.time())}.png", full_page=True)
+
+            # Take screenshot of the post image
+            img = await page.query_selector('article img')
+            if img:
+                filename = f"{self.IMAGE_DIR}/img_{int(time.time())}.jpg"
+                await img.screenshot(path=filename)
+                logging.info(f"Image saved: {filename}")
             else:
-                last_height = new_height
+                filename = "N/A"
+                logging.error(f"No image found for post: {url}")
 
-    def extract_and_download_posts(self):
-        self.navigate_to_profile()
-        time.sleep(2)
+            # Log the HTML structure for debugging
+            html_structure = await page.evaluate('''
+                () => {
+                    return document.body.innerHTML;
+                }
+            ''')
+            with open(f"debug_html_{int(time.time())}.html", "w", encoding="utf-8") as f:
+                f.write(html_structure)
 
-        post_counter = 0
-        with open("posts.csv", mode='a', newline='', encoding='utf-8') as file:
+            return {
+                'url': url,
+                'content': post_content,
+                'likes': likes,
+                'comments': comments,
+                'filename': filename
+            }
+        except Exception as e:
+            logging.error(f"Failed to extract data from post: {url}. Error: {str(e)}")
+            return None
+
+    async def extract_and_download_posts(self, page):
+        posts = await self.get_posts(page)
+        
+        if not posts:
+            logging.error("No posts retrieved")
+            return
+        
+        os.makedirs(self.IMAGE_DIR, exist_ok=True)
+        
+        with open(self.CSV_FILE, mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
+            writer.writerow(['Post URL', 'Post Content', 'Likes', 'Image Filename', 'Comment Username', 'Comment Text'])
 
-            if file.tell() == 0:
-                writer.writerow(['Image URL', 'Timestamp', 'Filename'])
-            posts = self.get_posts()
-            if posts:
-                first_post = posts[0]
-                self.driver.execute_script("arguments[0].scrollIntoView();", first_post)
-                self.wait.until(EC.element_to_be_clickable(first_post))
-                self.driver.execute_script("arguments[0].click();", first_post)
-                time.sleep(2)
+            for post_url in posts[:10]:  # Limit to first 10 posts for testing
+                logging.info(f"Processing post: {post_url}")
+                post_data = await self.extract_post_data(page, post_url)
+                if post_data:
+                    # Write the main post data
+                    writer.writerow([
+                        post_data['url'],
+                        post_data['content'],
+                        post_data['likes'],
+                        post_data['filename'],
+                        '',  # Empty username for the main post
+                        ''   # Empty comment text for the main post
+                    ])
+                    # Write each comment separately
+                    for comment in post_data['comments']:
+                        writer.writerow([
+                            post_data['url'],
+                            '',  # Empty content for comments
+                            '',  # Empty likes for comments
+                            '',  # Empty filename for comments
+                            comment['username'],
+                            comment['text']
+                        ])
+                    logging.info(f"Processed post {post_url} with {len(post_data['comments'])} comments")
+                else:
+                    logging.error(f"Failed to process post: {post_url}")
+                await asyncio.sleep(random.uniform(1, 3))
 
-            while True:
-                image_urls = []
-                try:
-                    self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div[role='dialog'] img")))
-                    
-                    image_element = self.driver.find_element(By.CSS_SELECTOR, "div[role='dialog'] img")
-                    image_url = image_element.get_attribute('src')
-                    image_urls.append(image_url)
+    async def run(self):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)  # Set to False for debugging
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            )
+            page = await context.new_page()
+            try:
+                await self.extract_and_download_posts(page)
+            except Exception as e:
+                logging.error(f"An error occurred: {str(e)}")
+            finally:
+                await browser.close()
 
-                    timestamp_element = self.driver.find_element(By.CSS_SELECTOR, "div[role='dialog'] time")
-                    timestamp = timestamp_element.get_attribute('datetime')
-                    year = timestamp.split('-')[0]
-                    if year < '2022':
-                        print(f"Encountered a post from {year}, which is before 2022. Ending the process.")
-                        break                
-                    if '2022' not in timestamp:
-                        next_button = self.driver.find_element(By.XPATH, "//div[contains(@class,'_aaqg _aaqh')]//button[@type='button']")
-                        next_button.click()
-                        time.sleep(1)
-                        continue
-
-                    while True:
-                        try:
-                            next_image_button = self.driver.find_element(By.XPATH, "//button[@aria-label='Next']")
-                            next_image_button.click()
-                            time.sleep(1)
-                            image_element = self.driver.find_element(By.CSS_SELECTOR, "div[role='dialog'] img")
-                            image_url = image_element.get_attribute('src')
-                            if image_url not in image_urls:
-                                image_urls.append(image_url)
-                        except NoSuchElementException:
-                            break
-
-                    filename_prefix = timestamp.split('T')[0] + "_post_" + self.PROFILE + str(post_counter) 
-                    if len(image_urls) > 1:
-                        combined_image = self.combine_images_vertically(image_urls)
-                        combined_filename = f"{filename_prefix}_combined.jpg"
-                        combined_image_path = f"downloaded_images/{combined_filename}"
-                        combined_image.save(combined_image_path)
-                        writer.writerow(['; '.join(image_urls), timestamp, combined_filename])
-                    else:
-                        single_filename = f"{filename_prefix}_image.jpg"
-                        single_image_path = f"downloaded_images/{single_filename}"
-                        self.download_image(image_urls[0], single_image_path)
-                        writer.writerow([image_urls[0], timestamp, single_filename])
-
-                    post_counter += 1
-
-                    next_post_button = self.driver.find_element(By.XPATH, "//div[contains(@class,'_aaqg _aaqh')]//button[@type='button']")
-                    next_post_button.click()
-                    time.sleep(1)
-
-                    if post_counter % 20 == 0:
-                        print(f"Processed {post_counter} posts. Taking a short break.")
-
-                except Exception as e:
-                    print(f"An error occurred at post {post_counter}: {e}. Moving to the next post.")
-                    try:
-                        next_post_button = self.driver.find_element(By.XPATH, "//div[contains(@class,'_aaqg _aaqh')]//button[@type='button']")
-                        next_post_button.click()
-                        time.sleep(1)
-                    except Exception as next_post_exception:
-                        print(f"Failed to navigate to the next post: {next_post_exception}. Exiting...")
-                        break
-
-                try:
-                    self.driver.find_element(By.XPATH, "//div[contains(@class,'_aaqg _aaqh')]//button[@type='button']")
-                except NoSuchElementException:
-                    print("Reached the end of the posts or no next button found. Ending the process.")
-                    break
-
-        print("Finished extracting posts.")
-
-    def run(self):
-        self.login()
-        self.extract_and_download_posts()
-        self.driver.quit()
-
+if __name__ == "__main__":
+    scraper = InstagramScraper()
+    asyncio.run(scraper.run())
