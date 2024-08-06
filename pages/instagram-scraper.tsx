@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import ScrapeButton from '../components/ScrapeButton';
 import InstagramData from '../components/InstagramData';
+import ScrapingProgress from '../components/ScrapingProgress';
 
 export default function InstagramScraper() {
   const [isLoading, setIsLoading] = useState(false);
   const [scrapedData, setScrapedData] = useState(null);
   const [profile, setProfile] = useState('');
+  const [progressData, setProgressData] = useState(null);
 
   const handleScrape = async () => {
     if (!profile) {
@@ -14,6 +16,7 @@ export default function InstagramScraper() {
       return;
     }
     setIsLoading(true);
+    setProgressData(null);
     try {
       const response = await fetch('/api/scrape-instagram', {
         method: 'POST',
@@ -22,8 +25,17 @@ export default function InstagramScraper() {
         },
         body: JSON.stringify({ profile }),
       });
-      const data = await response.json();
-      setScrapedData(data.csvContent);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        setProgressData(prevData => prevData ? prevData + chunk : chunk);
+      }
+
+      setScrapedData(progressData);
     } catch (error) {
       console.error('Error scraping data:', error);
     } finally {
@@ -63,6 +75,7 @@ export default function InstagramScraper() {
               />
               <ScrapeButton onClick={handleScrape} isLoading={isLoading} />
             </div>
+            <ScrapingProgress isLoading={isLoading} scrapedData={progressData} />
             {scrapedData && <InstagramData data={scrapedData} />}
           </div>
         </motion.div>

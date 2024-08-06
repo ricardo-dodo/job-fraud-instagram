@@ -1,17 +1,60 @@
 import Link from 'next/link';
+import { FaInstagram, FaChartBar, FaExclamationTriangle } from 'react-icons/fa';
+import { motion } from 'framer-motion';
+
+const DashboardCard = ({ href, title, description, icon: Icon, color }) => (
+  <Link href={href}>
+    <motion.div
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      className={`bg-white shadow-lg rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 hover:shadow-xl ${color}`}
+    >
+      <Icon className="w-12 h-12 mb-4" />
+      <h2 className="text-xl font-semibold mb-2">{title}</h2>
+      <p className="text-gray-600">{description}</p>
+    </motion.div>
+  </Link>
+);
 
 export default function Home() {
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-4">Web Scraping Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link href="/instagram-scraper" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded text-center">
-          Instagram Scraper
-        </Link>
-        <Link href="/view-data" className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded text-center">
-          View Data
-        </Link>
-      </div>
+    <div className="container mx-auto p-8">
+      <motion.h1
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="text-4xl font-bold mb-8 text-center text-gray-800"
+      >
+        Job Fraud Detection Dashboard
+      </motion.h1>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+      >
+        <DashboardCard
+          href="/instagram-scraper"
+          title="Instagram Scraper"
+          description="Scrape job postings from Instagram"
+          icon={FaInstagram}
+          color="text-blue-500 hover:bg-blue-50"
+        />
+        <DashboardCard
+          href="/view-data"
+          title="View Data"
+          description="Analyze scraped job postings"
+          icon={FaChartBar}
+          color="text-purple-500 hover:bg-purple-50"
+        />
+        <DashboardCard
+          href="/fraud-detection"
+          title="Fraud Detection"
+          description="Detect potentially fraudulent job postings"
+          icon={FaExclamationTriangle}
+          color="text-red-500 hover:bg-red-50"
+        />
+      </motion.div>
     </div>
   );
 }

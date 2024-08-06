@@ -11,24 +11,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Profile name is required' });
       }
 
+      res.writeHead(200, {
+        'Content-Type': 'text/plain',
+        'Transfer-Encoding': 'chunked',
+      });
+
       const scriptPath = path.join(process.cwd(), 'python-code', 'ig.py');
-      exec(`python3 ${scriptPath} ${profile}`, async (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Error: ${error.message}`);
-          return res.status(500).json({ error: 'Failed to run the script' });
-        }
-        if (stderr) {
-          console.error(`stderr: ${stderr}`);
-          return res.status(500).json({ error: 'Script encountered an error' });
-        }
-        
-        const csvFilePath = path.join(process.cwd(), `${profile}_instagram_posts.csv`);
-        if (fs.existsSync(csvFilePath)) {
-          const csvContent = await fs.promises.readFile(csvFilePath, 'utf-8');
-          res.status(200).json({ message: 'Scraping completed successfully', csvContent });
+      const csvPath = path.join(process.cwd(), `${profile}_instagram_posts.csv`);
+
+      const pythonProcess = exec(`python3 ${scriptPath} ${profile}`);
+
+      pythonProcess.stdout.on('data', (data) => {
+        res.write(data);
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        console.error(`stderr: ${data}`);
+      });
+
+      pythonProcess.on('close', (code) => {
+        if (code === 0) {
+          const csvContent = fs.readFileSync(csvPath, 'utf-8');
+          res.write(csvContent);
         } else {
-          res.status(404).json({ error: 'CSV file not found' });
+          res.write('Error occurred during scraping');
         }
+        res.end();
       });
     } catch (error) {
       res.status(500).json({ error: 'An error occurred while scraping' });
