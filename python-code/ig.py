@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import easyocr
 import io
 import numpy as np
+import cv2
 
 class InstagramScraper:
     def __init__(self):
@@ -20,7 +21,7 @@ class InstagramScraper:
         self.PASSWORD = os.getenv('INSTAGRAM_PASSWORD')
         self.PROFILE_URL = f"{self.BASE_URL}/{self.PROFILE}/"
         self.setup_logging()
-        self.reader = easyocr.Reader(['en'])  # Initialize EasyOCR
+        self.reader = easyocr.Reader(['id','en'])  # Initialize EasyOCR with English and Indonesian
 
     def setup_logging(self):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -107,14 +108,16 @@ class InstagramScraper:
                     img_buffer = await img.screenshot()
                     logging.debug("Screenshot taken, converting to numpy array")
                     img_np = np.frombuffer(img_buffer, np.uint8)
+                    img_np = cv2.imdecode(img_np, cv2.IMREAD_COLOR)  # Convert to OpenCV format
                     logging.debug("Performing OCR")
                     ocr_result = self.reader.readtext(img_np)
                     ocr_text = ' '.join([text for _, text, _ in ocr_result])
                     logging.info(f"OCR performed on image, result: {ocr_text[:50]}...")  # Log first 50 characters
                 else:
-                    logging.error("No image found for post")
+                    logging.warning("No image found for post")
             except Exception as e:
                 logging.error(f"Error during image processing or OCR: {str(e)}")
+                ocr_text = "OCR processing failed"
 
             logging.debug("Extracting comments")
             comments = await page.evaluate('''
@@ -150,11 +153,9 @@ class InstagramScraper:
             writer.writerow(['Post URL', 'Post Content', 'OCR Text', 'Comment Username', 'Comment Text'])
 
             post_count = 0
-            posts_with_comments = 0
-            posts_without_comments = 0
             max_posts = 20
 
-            while post_count < max_posts and (posts_with_comments < 10 or posts_without_comments < 10):
+            while post_count < max_posts:
                 logging.info(f"Processing post {post_count + 1}")
                 
                 await asyncio.sleep(5)
@@ -164,7 +165,7 @@ class InstagramScraper:
                 
                 post_data = await self.extract_post_data(page)
                 if post_data:
-                    if post_data['comments'] and posts_with_comments < 10:
+                    if post_data['comments']:
                         for comment in post_data['comments']:
                             writer.writerow([
                                 post_data['url'],
@@ -173,19 +174,14 @@ class InstagramScraper:
                                 comment['username'],
                                 comment['text']
                             ])
-                        posts_with_comments += 1
-                        logging.info(f"Processed post {post_count + 1} with {len(post_data['comments'])} comments")
-                    elif not post_data['comments'] and posts_without_comments < 10:
+                    else:
                         writer.writerow([
                             post_data['url'],
                             post_data['content'],
                             post_data['ocr_text'],
                             '', ''  # Empty fields for comment data
                         ])
-                        posts_without_comments += 1
-                        logging.info(f"Processed post {post_count + 1} without comments")
-                    else:
-                        logging.info(f"Skipping post {post_count + 1} as we have enough posts of this type")
+                    logging.info(f"Processed post {post_count + 1} with {len(post_data['comments'])} comments")
                 else:
                     logging.error(f"Failed to process post {post_count + 1}")
 
@@ -201,8 +197,6 @@ class InstagramScraper:
                 await asyncio.sleep(random.uniform(2, 4))
 
         logging.info(f"Finished processing {post_count} posts")
-        logging.info(f"Posts with comments: {posts_with_comments}")
-        logging.info(f"Posts without comments: {posts_without_comments}")
 
     async def run(self):
         async with async_playwright() as p:
