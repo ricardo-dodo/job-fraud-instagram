@@ -4,8 +4,11 @@ import os
 import random
 import logging
 import asyncio
-from playwright.async_api import async_playwright, TimeoutError
+from playwright.async_api import async_playwright
 from dotenv import load_dotenv
+import easyocr
+import io
+import numpy as np
 
 class InstagramScraper:
     def __init__(self):
@@ -13,8 +16,11 @@ class InstagramScraper:
         self.BASE_URL = "https://www.instagram.com"
         self.PROFILE = "loker_it"
         self.CSV_FILE = "instagram_posts.csv"
-        self.IMAGE_DIR = "instagram_images"
+        self.USERNAME = os.getenv('INSTAGRAM_USERNAME')
+        self.PASSWORD = os.getenv('INSTAGRAM_PASSWORD')
+        self.PROFILE_URL = f"{self.BASE_URL}/{self.PROFILE}/"
         self.setup_logging()
+        self.reader = easyocr.Reader(['en'])  # Initialize EasyOCR
 
     def setup_logging(self):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,173 +28,191 @@ class InstagramScraper:
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logging.getLogger().addHandler(file_handler)
 
-    async def check_for_login_prompt(self, page):
+    async def login(self, page):
+        await page.goto(f"{self.BASE_URL}/accounts/login/")
+        await page.wait_for_selector('input[name="username"]')
+        await page.fill('input[name="username"]', self.USERNAME)
+        await page.fill('input[name="password"]', self.PASSWORD)
+        await page.click('button[type="submit"]')
+        await page.wait_for_load_state('networkidle')
+        logging.info("Login attempted")
+
+        await page.goto(self.PROFILE_URL)
+        await page.wait_for_load_state('networkidle')
+        logging.info(f"Navigated to profile: {self.PROFILE_URL}")
+
+    async def get_first_post(self, page):
         try:
-            login_prompt = await page.wait_for_selector('text="Log in to Instagram"', timeout=5000)
-            if login_prompt:
-                logging.warning("Login prompt detected. Please log in manually.")
-                input("Press Enter after you've logged in...")
-                await page.reload()
-                await page.wait_for_load_state('networkidle')
+            await page.wait_for_load_state('networkidle', timeout=30000)
+            
+            await page.evaluate('window.scrollBy(0, window.innerHeight)')
+            await page.wait_for_load_state('networkidle', timeout=5000)
+            
+            current_url = page.url
+            logging.info(f"Current page URL: {current_url}")
+            
+            await page.wait_for_selector('body', timeout=10000)
+            
+            page_title = await page.title()
+            logging.info(f"Page title: {page_title}")
+            
+            selector = 'div.x1lliihq.x1n2onr6.xh8yej3 a[href^="/p/"]'
+            logging.info(f"Trying selector: {selector}")
+            
+            first_post = await page.wait_for_selector(selector, timeout=20000)
+            if first_post:
+                logging.info("Found first post, clicking it")
+                await first_post.click()
+                await page.wait_for_selector('div[role="dialog"]', timeout=10000)
+                logging.info("Post preview loaded")
                 return True
-        except TimeoutError:
-            pass  # No login prompt found, which is fine
-        return False
-
-    async def get_posts(self, page):
-        await page.goto(f"{self.BASE_URL}/{self.PROFILE}/")
-        await page.wait_for_load_state('networkidle')
-        
-        while True:
-            # Scroll to bottom
-            previous_height = await page.evaluate('document.body.scrollHeight')
-            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-            await page.wait_for_timeout(2000)  # Wait for 2 seconds after scrolling
             
-            # Check for login prompt
-            login_detected = await self.check_for_login_prompt(page)
-            if login_detected:
-                continue  # Start the loop again to retry scrolling
+            logging.error("Could not find any posts using the selector")
             
-            # Check for "Show more posts" button
-            show_more_button = await page.query_selector('text="Show more posts from loker_it"')
-            if show_more_button:
-                await show_more_button.click()
-                await page.wait_for_load_state('networkidle')
-                continue  # Start the loop again to scroll further
+            page_content = await page.content()
+            logging.debug(f"Page content: {page_content[:2000]}...")
             
-            # Check if we've reached the end
-            new_height = await page.evaluate('document.body.scrollHeight')
-            if new_height == previous_height:
-                # If no new content loaded after scrolling, we've reached the end
-                break
+            return False
+        except Exception as e:
+            logging.error(f"Error in get_first_post: {str(e)}")
+            return False
 
-        posts = await page.evaluate('''
-            () => {
-                const links = Array.from(document.querySelectorAll('article a'));
-                return links.map(link => link.href).filter(href => href.includes('/p/'));
-            }
-        ''')
-        logging.info(f"Found {len(posts)} posts")
-        return posts
-
-    async def extract_post_data(self, page, url):
-        await page.goto(url)
-        await page.wait_for_load_state('networkidle')
-        
+    async def extract_post_data(self, page):
         try:
-            # Wait for the content to load
-            await page.wait_for_selector('article', timeout=10000)
+            await page.wait_for_selector('div[role="dialog"]', timeout=10000)
+            logging.debug("Dialog selector found")
 
-            # Extract post content
+            post_url = await page.evaluate('''
+                () => {
+                    const linkElement = document.querySelector('div[role="dialog"] a[href^="/p/"]');
+                    return linkElement ? linkElement.href : null;
+                }
+            ''')
+            logging.debug(f"Post URL: {post_url}")
+
             post_content = await page.evaluate('''
                 () => {
-                    const contentElement = document.querySelector('div[class*="_a9zs"]');
+                    const contentElement = document.querySelector('div[role="dialog"] h1');
                     return contentElement ? contentElement.innerText : 'No content found';
                 }
             ''')
+            logging.debug(f"Post content: {post_content[:50]}...")  # Log first 50 characters
 
-            # Extract likes (this might not be visible for all posts)
-            likes = "N/A"
+            ocr_text = ''
             try:
-                likes_element = await page.wait_for_selector('section span', timeout=5000)
-                likes = await likes_element.inner_text()
-            except TimeoutError:
-                logging.warning(f"Likes not found for post: {url}")
+                logging.debug("Attempting to find image")
+                img = await page.query_selector('div[role="dialog"] div._aagu img')
+                if img:
+                    logging.debug("Image found, attempting screenshot")
+                    img_buffer = await img.screenshot()
+                    logging.debug("Screenshot taken, converting to numpy array")
+                    img_np = np.frombuffer(img_buffer, np.uint8)
+                    logging.debug("Performing OCR")
+                    ocr_result = self.reader.readtext(img_np)
+                    ocr_text = ' '.join([text for _, text, _ in ocr_result])
+                    logging.info(f"OCR performed on image, result: {ocr_text[:50]}...")  # Log first 50 characters
+                else:
+                    logging.error("No image found for post")
+            except Exception as e:
+                logging.error(f"Error during image processing or OCR: {str(e)}")
 
-            # Scroll to load more comments
-            for _ in range(3):  # Adjust this number to scroll more or less
-                await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                await page.wait_for_timeout(1000)  # Wait for 1 second after each scroll
-
-            # Extract comments using the alternative method, filtering out "No text" comments
+            logging.debug("Extracting comments")
             comments = await page.evaluate('''
                 () => {
-                    const comments = Array.from(document.querySelectorAll('ul > div > li'));
+                    const comments = Array.from(document.querySelectorAll('ul._a9ym > div[role="button"]'));
                     return comments.map(comment => {
-                        const username = comment.querySelector('a')?.innerText || 'Unknown';
-                        const text = comment.querySelector('div > div > div > span')?.innerText || '';
+                        const username = comment.querySelector('h3 a')?.innerText || 'Unknown';
+                        const text = comment.querySelector('div._a9zs span')?.innerText || '';
                         return {username, text};
                     }).filter(comment => comment.text !== '' && comment.text !== 'No text');
                 }
             ''')
             
-            logging.info(f"Extracted {len(comments)} valid comments for post: {url}")
-
-            # Take screenshot of the post image
-            img = await page.query_selector('article img')
-            if img:
-                filename = f"{self.IMAGE_DIR}/img_{int(time.time())}.jpg"
-                await img.screenshot(path=filename)
-                logging.info(f"Image saved: {filename}")
-            else:
-                filename = "N/A"
-                logging.error(f"No image found for post: {url}")
+            logging.info(f"Extracted {len(comments)} valid comments for post")
 
             return {
-                'url': url,
+                'url': post_url,
                 'content': post_content,
-                'likes': likes,
                 'comments': comments,
-                'filename': filename
+                'ocr_text': ocr_text
             }
         except Exception as e:
-            logging.error(f"Failed to extract data from post: {url}. Error: {str(e)}")
+            logging.error(f"Failed to extract data from post. Error: {str(e)}")
             return None
 
     async def extract_and_download_posts(self, page):
-        posts = await self.get_posts(page)
-        
-        if not posts:
-            logging.error("No posts retrieved")
+        if not await self.get_first_post(page):
+            logging.error("No posts found or couldn't open preview. Ending extraction process.")
             return
-        
-        os.makedirs(self.IMAGE_DIR, exist_ok=True)
         
         with open(self.CSV_FILE, mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            writer.writerow(['Post URL', 'Post Content', 'Likes', 'Image Filename', 'Comment Username', 'Comment Text'])
+            writer.writerow(['Post URL', 'Post Content', 'OCR Text', 'Comment Username', 'Comment Text'])
 
-            for post_url in posts[:10]:  # Limit to first 10 posts for testing
-                logging.info(f"Processing post: {post_url}")
-                post_data = await self.extract_post_data(page, post_url)
+            post_count = 0
+            posts_with_comments = 0
+            posts_without_comments = 0
+            max_posts = 20
+
+            while post_count < max_posts and (posts_with_comments < 10 or posts_without_comments < 10):
+                logging.info(f"Processing post {post_count + 1}")
+                
+                await asyncio.sleep(5)
+                await page.wait_for_load_state('networkidle', timeout=10000)
+                
+                await page.wait_for_selector('div[role="dialog"]', state='visible', timeout=10000)
+                
+                post_data = await self.extract_post_data(page)
                 if post_data:
-                    valid_comments = [c for c in post_data['comments'] if c['text'] != 'No text']
-                    if valid_comments:
-                        # Write each valid comment with post data
-                        for comment in valid_comments:
+                    if post_data['comments'] and posts_with_comments < 10:
+                        for comment in post_data['comments']:
                             writer.writerow([
                                 post_data['url'],
                                 post_data['content'],
-                                post_data['likes'],
-                                post_data['filename'],
+                                post_data['ocr_text'],
                                 comment['username'],
                                 comment['text']
                             ])
-                        logging.info(f"Processed post {post_url} with {len(valid_comments)} valid comments")
-                    else:
-                        # If there are no valid comments, still write the post data with empty comment fields
+                        posts_with_comments += 1
+                        logging.info(f"Processed post {post_count + 1} with {len(post_data['comments'])} comments")
+                    elif not post_data['comments'] and posts_without_comments < 10:
                         writer.writerow([
                             post_data['url'],
                             post_data['content'],
-                            post_data['likes'],
-                            post_data['filename'],
-                            '',  # Empty username for posts without valid comments
-                            ''   # Empty comment text for posts without valid comments
+                            post_data['ocr_text'],
+                            '', ''  # Empty fields for comment data
                         ])
-                        logging.info(f"Processed post {post_url} with no valid comments")
+                        posts_without_comments += 1
+                        logging.info(f"Processed post {post_count + 1} without comments")
+                    else:
+                        logging.info(f"Skipping post {post_count + 1} as we have enough posts of this type")
                 else:
-                    logging.error(f"Failed to process post: {post_url}")
-                await asyncio.sleep(random.uniform(1, 3))
+                    logging.error(f"Failed to process post {post_count + 1}")
+
+                next_button = await page.query_selector('button svg[aria-label="Next"]')
+                if next_button:
+                    await next_button.click()
+                    await page.wait_for_selector('div[role="dialog"]', state='visible', timeout=10000)
+                else:
+                    logging.info("No more posts to process")
+                    break
+
+                post_count += 1
+                await asyncio.sleep(random.uniform(2, 4))
+
+        logging.info(f"Finished processing {post_count} posts")
+        logging.info(f"Posts with comments: {posts_with_comments}")
+        logging.info(f"Posts without comments: {posts_without_comments}")
 
     async def run(self):
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)  # Set to False for debugging
+            browser = await p.chromium.launch(headless=False)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             )
             page = await context.new_page()
             try:
+                await self.login(page)
                 await self.extract_and_download_posts(page)
             except Exception as e:
                 logging.error(f"An error occurred: {str(e)}")
