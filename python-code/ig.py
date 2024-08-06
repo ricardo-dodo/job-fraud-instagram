@@ -12,11 +12,11 @@ import numpy as np
 import cv2
 
 class InstagramScraper:
-    def __init__(self):
+    def __init__(self, profile):
         load_dotenv()
         self.BASE_URL = "https://www.instagram.com"
-        self.PROFILE = "loker_it"
-        self.CSV_FILE = "instagram_posts.csv"
+        self.PROFILE = profile
+        self.CSV_FILE = f"{profile}_instagram_posts.csv"
         self.USERNAME = os.getenv('INSTAGRAM_USERNAME')
         self.PASSWORD = os.getenv('INSTAGRAM_PASSWORD')
         self.PROFILE_URL = f"{self.BASE_URL}/{self.PROFILE}/"
@@ -200,7 +200,7 @@ class InstagramScraper:
 
     async def run(self):
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
+            browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             )
@@ -213,6 +213,15 @@ class InstagramScraper:
             finally:
                 await browser.close()
 
-if __name__ == "__main__":
-    scraper = InstagramScraper()
+def scrape_profile(profile):
+    scraper = InstagramScraper(profile)
     asyncio.run(scraper.run())
+    return f"{profile}_instagram_posts.csv"
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        profile = sys.argv[1]
+        scrape_profile(profile)
+    else:
+        print("Please provide an Instagram profile name as an argument.")

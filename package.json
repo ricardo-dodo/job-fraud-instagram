@@ -4,12 +4,14 @@
   "description": "Fraud Job Detection",
   "main": "next.config.js",
   "dependencies": {
-    "@types/node": "^22.1.0",
     "@types/react": "^18.3.3",
     "eslint": "^9.8.0",
+    "framer-motion": "^11.3.21",
     "next": "^14.2.5",
     "react": "^18.3.1",
+    "react-data-grid": "^7.0.0-beta.45",
     "react-dom": "^18.3.1",
+    "react-icons": "^5.2.1",
     "typescript": "^5.5.4"
   },
   "scripts": {
@@ -19,8 +21,10 @@
     "lint": "next lint"
   },
   "devDependencies": {
-    "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.40",
+    "@types/node": "^22.1.0",
+    "@types/prop-types": "^15.7.12",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.41",
     "stylelint-config-recommended": "^14.0.1",
     "tailwindcss": "^3.4.7"
   }
