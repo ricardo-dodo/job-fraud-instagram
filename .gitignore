@@ -7,3 +7,6 @@ instagram_posts.log
 instagram_scraper.log
 jobstreet_scraper.log
 company_ratings.csv
+venv/
+__pycache__/
+*.pyc

@@ -18,7 +18,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "install-py-deps": "pip install -r requirements.txt"
   },
   "devDependencies": {
     "@types/node": "^22.1.0",
