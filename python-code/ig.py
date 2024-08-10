@@ -10,6 +10,8 @@ import easyocr
 import io
 import numpy as np
 import cv2
+from openpyxl import Workbook
+import sys
 
 class InstagramScraper:
     def __init__(self, profile):
@@ -25,9 +27,9 @@ class InstagramScraper:
 
     def setup_logging(self):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-        file_handler = logging.FileHandler('instagram_scraper.log')
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logging.getLogger().addHandler(file_handler)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logging.getLogger().addHandler(console_handler)
 
     async def login(self, page):
         await page.goto(f"{self.BASE_URL}/accounts/login/")
@@ -57,18 +59,27 @@ class InstagramScraper:
             page_title = await page.title()
             logging.info(f"Page title: {page_title}")
             
-            selector = 'div.x1lliihq.x1n2onr6.xh8yej3 a[href^="/p/"]'
-            logging.info(f"Trying selector: {selector}")
+            # Try multiple selectors
+            selectors = [
+                'div.x1lliihq.x1n2onr6.xh8yej3 a[href^="/p/"]',
+                'article a[href^="/p/"]',
+                'div[role="presentation"] a[href^="/p/"]'
+            ]
             
-            first_post = await page.wait_for_selector(selector, timeout=20000)
-            if first_post:
-                logging.info("Found first post, clicking it")
-                await first_post.click()
-                await page.wait_for_selector('div[role="dialog"]', timeout=10000)
-                logging.info("Post preview loaded")
-                return True
+            for selector in selectors:
+                logging.info(f"Trying selector: {selector}")
+                try:
+                    first_post = await page.wait_for_selector(selector, timeout=10000)
+                    if first_post:
+                        logging.info("Found first post, clicking it")
+                        await first_post.click()
+                        await page.wait_for_selector('div[role="dialog"]', timeout=10000)
+                        logging.info("Post preview loaded")
+                        return True
+                except Exception as e:
+                    logging.warning(f"Selector {selector} failed: {str(e)}")
             
-            logging.error("Could not find any posts using the selector")
+            logging.error("Could not find any posts using the selectors")
             
             page_content = await page.content()
             logging.debug(f"Page content: {page_content[:2000]}...")
@@ -146,57 +157,58 @@ class InstagramScraper:
     async def extract_and_download_posts(self, page):
         if not await self.get_first_post(page):
             logging.error("No posts found or couldn't open preview. Ending extraction process.")
-            return
+            return None
         
-        with open(self.CSV_FILE, mode='w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            writer.writerow(['Post URL', 'Post Content', 'OCR Text', 'Comment Username', 'Comment Text'])
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(['Post URL', 'Post Content', 'OCR Text', 'Comment Username', 'Comment Text'])
 
-            post_count = 0
-            max_posts = 20
+        post_count = 0
+        max_posts = 2  # Increase this number to scrape more posts
 
-            while post_count < max_posts:
-                logging.info(f"Processing post {post_count + 1}")
-                
-                await asyncio.sleep(5)
-                await page.wait_for_load_state('networkidle', timeout=10000)
-                
-                await page.wait_for_selector('div[role="dialog"]', state='visible', timeout=10000)
-                
-                post_data = await self.extract_post_data(page)
-                if post_data:
-                    if post_data['comments']:
-                        for comment in post_data['comments']:
-                            writer.writerow([
-                                post_data['url'],
-                                post_data['content'],
-                                post_data['ocr_text'],
-                                comment['username'],
-                                comment['text']
-                            ])
-                    else:
-                        writer.writerow([
+        while post_count < max_posts:
+            logging.info(f"Processing post {post_count + 1}")
+            
+            post_data = await self.extract_post_data(page)
+            if post_data:
+                if post_data['comments']:
+                    for comment in post_data['comments']:
+                        sheet.append([
                             post_data['url'],
                             post_data['content'],
                             post_data['ocr_text'],
-                            '', ''  # Empty fields for comment data
+                            comment['username'],
+                            comment['text']
                         ])
-                    logging.info(f"Processed post {post_count + 1} with {len(post_data['comments'])} comments")
                 else:
-                    logging.error(f"Failed to process post {post_count + 1}")
+                    sheet.append([
+                        post_data['url'],
+                        post_data['content'],
+                        post_data['ocr_text'],
+                        '', ''  # Empty fields for comment data
+                    ])
+                logging.info(f"Processed post {post_count + 1} with {len(post_data['comments'])} comments")
+            else:
+                logging.error(f"Failed to process post {post_count + 1}")
 
-                next_button = await page.query_selector('button svg[aria-label="Next"]')
-                if next_button:
-                    await next_button.click()
-                    await page.wait_for_selector('div[role="dialog"]', state='visible', timeout=10000)
-                else:
-                    logging.info("No more posts to process")
-                    break
+            next_button = await page.query_selector('button svg[aria-label="Next"]')
+            if next_button:
+                await next_button.click()
+                await page.wait_for_selector('div[role="dialog"]', state='visible', timeout=10000)
+            else:
+                logging.info("No more posts to process")
+                break
 
-                post_count += 1
-                await asyncio.sleep(random.uniform(2, 4))
+            post_count += 1
+            await asyncio.sleep(random.uniform(2, 4))
 
         logging.info(f"Finished processing {post_count} posts")
+        
+        excel_file = io.BytesIO()
+        workbook.save(excel_file)
+        excel_file.seek(0)
+        
+        return excel_file
 
     async def run(self):
         async with async_playwright() as p:
@@ -206,22 +218,40 @@ class InstagramScraper:
             )
             page = await context.new_page()
             try:
+                logging.info("Starting login process")
                 await self.login(page)
-                await self.extract_and_download_posts(page)
+                logging.info("Login successful, starting data extraction")
+                excel_file = await self.extract_and_download_posts(page)
+                logging.info("Data extraction complete")
+                return excel_file
             except Exception as e:
                 logging.error(f"An error occurred: {str(e)}")
+                return None
             finally:
                 await browser.close()
 
 def scrape_profile(profile):
     scraper = InstagramScraper(profile)
-    asyncio.run(scraper.run())
-    return f"{profile}_instagram_posts.csv"
+    excel_file = asyncio.run(scraper.run())
+    if excel_file:
+        file_path = os.path.abspath(f"{profile}_instagram_posts.xlsx")
+        with open(file_path, "wb") as f:
+            f.write(excel_file.getvalue())
+        print(f"Data saved to {file_path}")
+        return file_path
+    else:
+        print("Failed to scrape data")
+        return None
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        profile = sys.argv[1]
-        scrape_profile(profile)
+    if len(sys.argv) != 2:
+        print("Usage: python ig.py <instagram_profile>")
+        sys.exit(1)
+    
+    profile = sys.argv[1]
+    file_path = scrape_profile(profile)
+    
+    if file_path:
+        print(f"Excel file created at: {file_path}")
     else:
-        print("Please provide an Instagram profile name as an argument.")
+        print("No data was scraped, no file created.")

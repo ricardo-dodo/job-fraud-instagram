@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import ScrapeButton from '../components/ScrapeButton';
-import InstagramData from '../components/InstagramData';
 import ScrapingProgress from '../components/ScrapingProgress';
+import InstagramData from '../components/InstagramData';
+import * as XLSX from 'xlsx';
 
 export default function InstagramScraper() {
   const [isLoading, setIsLoading] = useState(false);
-  const [scrapedData, setScrapedData] = useState(null);
   const [profile, setProfile] = useState('');
-  const [progressData, setProgressData] = useState(null);
+  const [scrapedData, setScrapedData] = useState(null);
 
   const handleScrape = async () => {
     if (!profile) {
@@ -16,7 +16,7 @@ export default function InstagramScraper() {
       return;
     }
     setIsLoading(true);
-    setProgressData(null);
+    setScrapedData(null);
     try {
       const response = await fetch('/api/scrape-instagram', {
         method: 'POST',
@@ -25,19 +25,21 @@ export default function InstagramScraper() {
         },
         body: JSON.stringify({ profile }),
       });
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        setProgressData(prevData => prevData ? prevData + chunk : chunk);
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+        setScrapedData(data);
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to scrape data');
       }
-
-      setScrapedData(progressData);
     } catch (error) {
       console.error('Error scraping data:', error);
+      alert('An error occurred while scraping data. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -50,7 +52,7 @@ export default function InstagramScraper() {
       transition={{ duration: 0.5 }}
       className="min-h-screen bg-gradient-to-br from-purple-100 to-indigo-200 py-12 px-4 sm:px-6 lg:px-8"
     >
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         <motion.h1
           initial={{ y: -20 }}
           animate={{ y: 0 }}
@@ -62,7 +64,7 @@ export default function InstagramScraper() {
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="bg-white shadow-xl rounded-lg overflow-hidden"
+          className="bg-white shadow-xl rounded-lg overflow-hidden mb-8"
         >
           <div className="p-6">
             <div className="flex items-center space-x-4 mb-6">
@@ -75,10 +77,10 @@ export default function InstagramScraper() {
               />
               <ScrapeButton onClick={handleScrape} isLoading={isLoading} />
             </div>
-            <ScrapingProgress isLoading={isLoading} scrapedData={progressData} />
-            {scrapedData && <InstagramData data={scrapedData} />}
+            <ScrapingProgress isLoading={isLoading} />
           </div>
         </motion.div>
+        {scrapedData && <InstagramData data={scrapedData} />}
       </div>
     </motion.div>
   );

@@ -1,52 +1,31 @@
-import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 
 interface ScrapingProgressProps {
   isLoading: boolean;
-  scrapedData: string | null;
 }
 
-export default function ScrapingProgress({ isLoading, scrapedData }: ScrapingProgressProps) {
-  const [parsedData, setParsedData] = useState<string[][]>([]);
-
-  useEffect(() => {
-    if (scrapedData) {
-      const rows = scrapedData.split('\n').map(row => row.split('|'));
-      setParsedData(rows);
-    }
-  }, [scrapedData]);
-
-  if (!isLoading && !scrapedData) return null;
+export default function ScrapingProgress({ isLoading }: ScrapingProgressProps) {
+  if (!isLoading) return null;
 
   return (
-    <div className="mt-8">
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">Scraping Progress</h2>
-      {isLoading && <p className="text-gray-600">Scraping in progress...</p>}
-      {parsedData.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {parsedData[0].map((header, index) => (
-                  <th key={index} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {parsedData.slice(1).map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
-                    <td key={cellIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="mt-8"
+    >
+      <div className="bg-white shadow-md rounded-lg p-6">
+        <div className="flex items-center justify-center">
+          <svg className="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <p className="text-lg text-gray-600">Scraping in progress...</p>
         </div>
-      )}
-    </div>
+        <p className="mt-4 text-sm text-gray-500 text-center">
+          This may take a few minutes. Please don't close the browser window.
+        </p>
+      </div>
+    </motion.div>
   );
 }
