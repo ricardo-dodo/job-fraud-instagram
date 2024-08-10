@@ -12,7 +12,7 @@ export default function ScrapeButton({ onClick, isLoading }: ScrapeButtonProps) 
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       disabled={isLoading}
-      className={`bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 ease-in-out flex items-center justify-center ${
+      className={`bg-indigo-600 dark:bg-indigo-700 hover:bg-indigo-700 dark:hover:bg-indigo-800 text-white font-bold py-3 px-6 rounded-lg transition duration-300 ease-in-out flex items-center justify-center ${
         isLoading ? 'opacity-50 cursor-not-allowed' : ''
       }`}
     >

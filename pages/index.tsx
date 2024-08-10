@@ -7,11 +7,11 @@ const DashboardCard = ({ href, title, description, icon: Icon, color }) => (
     <motion.div
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
-      className={`bg-white shadow-lg rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 hover:shadow-xl ${color}`}
+      className={`bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 hover:shadow-xl ${color}`}
     >
       <Icon className="w-12 h-12 mb-4" />
-      <h2 className="text-xl font-semibold mb-2">{title}</h2>
-      <p className="text-gray-600">{description}</p>
+      <h2 className="text-xl font-semibold mb-2 dark:text-white">{title}</h2>
+      <p className="text-gray-600 dark:text-gray-300">{description}</p>
     </motion.div>
   </Link>
 );
@@ -23,7 +23,7 @@ export default function Home() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="text-4xl font-bold mb-8 text-center text-gray-800"
+        className="text-4xl font-bold mb-8 text-center text-gray-800 dark:text-white"
       >
         Job Fraud Detection Dashboard
       </motion.h1>
@@ -38,21 +38,21 @@ export default function Home() {
           title="Instagram Scraper"
           description="Scrape job postings from Instagram"
           icon={FaInstagram}
-          color="text-blue-500 hover:bg-blue-50"
+          color="text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900"
         />
         <DashboardCard
           href="/view-data"
           title="View Data"
           description="Analyze scraped job postings"
           icon={FaChartBar}
-          color="text-purple-500 hover:bg-purple-50"
+          color="text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900"
         />
         <DashboardCard
           href="/fraud-detection"
           title="Fraud Detection"
           description="Detect potentially fraudulent job postings"
           icon={FaExclamationTriangle}
-          color="text-red-500 hover:bg-red-50"
+          color="text-red-500 hover:bg-red-50 dark:hover:bg-red-900"
         />
       </motion.div>
     </div>

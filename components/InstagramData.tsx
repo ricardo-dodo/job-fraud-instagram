@@ -15,7 +15,7 @@ const TextWithShowMore = ({ text, maxLength = 100 }) => {
       <p>{isExpanded ? text : `${text.slice(0, maxLength)}...`}</p>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="text-blue-500 hover:text-blue-700 font-semibold mt-2"
+        className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-semibold mt-2"
       >
         {isExpanded ? 'Show Less' : 'Show More'}
       </button>
@@ -91,26 +91,26 @@ export default function InstagramData({ data }: InstagramDataProps) {
 
   const renderTableHeader = () => (
     <tr>
-      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Post URL</th>
-      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Post Content</th>
-      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OCR Text</th>
-      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comments</th>
+      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Post URL</th>
+      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Post Content</th>
+      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">OCR Text</th>
+      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Comments</th>
     </tr>
   );
 
   const renderTableRows = () => {
     return currentItems.map((row, rowIndex) => (
-      <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-        <td className="px-6 py-4 text-sm text-gray-900">
+      <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700'}>
+        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
           <ViewPostButton url={row['Post URL']} />
         </td>
-        <td className="px-6 py-4 text-sm text-gray-900">
+        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
           <TextWithShowMore text={row['Post Content']} maxLength={100} />
         </td>
-        <td className="px-6 py-4 text-sm text-gray-900">
+        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
           <TextWithShowMore text={row['OCR Text']} maxLength={100} />
         </td>
-        <td className="px-6 py-4 text-sm text-gray-900">
+        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
           {row.comments.map((comment, index) => (
             <div key={index} className="mb-2">
               <strong>{comment.username}:</strong> {comment.text}
@@ -126,15 +126,15 @@ export default function InstagramData({ data }: InstagramDataProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="bg-white shadow-xl rounded-lg overflow-hidden"
+      className="bg-white dark:bg-gray-800 shadow-xl rounded-lg overflow-hidden"
     >
-      <h2 className="text-2xl font-semibold text-gray-800 p-6">Scraped Data</h2>
+      <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-200 p-6">Scraped Data</h2>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-700">
             {renderTableHeader()}
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {renderTableRows()}
           </tbody>
         </table>
@@ -143,17 +143,17 @@ export default function InstagramData({ data }: InstagramDataProps) {
         <button
           onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
           disabled={currentPage === 1}
-          className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-l disabled:opacity-50"
+          className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-l disabled:opacity-50"
         >
           Previous
         </button>
-        <span className="text-gray-700">
+        <span className="text-gray-700 dark:text-gray-300">
           Page {currentPage} of {pageCount}
         </span>
         <button
           onClick={() => setCurrentPage(prev => Math.min(prev + 1, pageCount))}
           disabled={currentPage === pageCount}
-          className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-r disabled:opacity-50"
+          className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-r disabled:opacity-50"
         >
           Next
         </button>

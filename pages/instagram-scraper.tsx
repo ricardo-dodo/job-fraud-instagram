@@ -26,62 +26,52 @@ export default function InstagramScraper() {
         body: JSON.stringify({ profile }),
       });
 
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-        setScrapedData(data);
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to scrape data');
+      if (!response.ok) {
+        throw new Error('Failed to start scraping');
       }
+
+      const blob = await response.blob();
+      const workbook = XLSX.read(await blob.arrayBuffer(), { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      setScrapedData(data);
     } catch (error) {
-      console.error('Error scraping data:', error);
-      alert('An error occurred while scraping data. Please try again.');
+      console.error('Error during scraping:', error);
+      alert('An error occurred during scraping. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="min-h-screen bg-gradient-to-br from-purple-100 to-indigo-200 py-12 px-4 sm:px-6 lg:px-8"
-    >
-      <div className="max-w-6xl mx-auto">
-        <motion.h1
-          initial={{ y: -20 }}
-          animate={{ y: 0 }}
-          className="text-4xl font-extrabold text-gray-900 text-center mb-8"
-        >
-          Instagram Scraper
-        </motion.h1>
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white shadow-xl rounded-lg overflow-hidden mb-8"
-        >
-          <div className="p-6">
-            <div className="flex items-center space-x-4 mb-6">
-              <input
-                type="text"
-                value={profile}
-                onChange={(e) => setProfile(e.target.value)}
-                placeholder="Enter Instagram profile name"
-                className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-              <ScrapeButton onClick={handleScrape} isLoading={isLoading} />
-            </div>
-            <ScrapingProgress isLoading={isLoading} />
-          </div>
-        </motion.div>
-        {scrapedData && <InstagramData data={scrapedData} />}
+    <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <motion.h1
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="text-3xl font-bold mb-8 text-center text-gray-800 dark:text-white"
+      >
+        Instagram Scraper
+      </motion.h1>
+      <div className="mb-8">
+        <div className="mb-4">
+          <label htmlFor="profile" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Instagram Profile Name
+          </label>
+          <input
+            type="text"
+            id="profile"
+            value={profile}
+            onChange={(e) => setProfile(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
+            placeholder="Enter Instagram profile name"
+          />
+        </div>
+        <ScrapeButton onClick={handleScrape} isLoading={isLoading} />
       </div>
-    </motion.div>
+      <ScrapingProgress isLoading={isLoading} />
+      {scrapedData && <InstagramData data={scrapedData} />}
+    </div>
   );
 }
