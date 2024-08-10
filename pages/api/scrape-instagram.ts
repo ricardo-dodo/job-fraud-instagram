@@ -12,6 +12,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const scriptPath = path.join(process.cwd(), 'python-code', 'ig.py');
+      console.log(`Executing Python script: ${scriptPath}`);
 
       const pythonProcess = exec(`python3 ${scriptPath} ${profile}`);
 
@@ -20,15 +21,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       pythonProcess.stdout.on('data', (data) => {
         output += data.toString();
-        console.log(data.toString()); // This will log to the server console
+        console.log(`Python script output: ${data.toString()}`);
       });
 
       pythonProcess.stderr.on('data', (data) => {
         errorOutput += data.toString();
-        console.error(data.toString()); // This will log errors to the server console
+        console.error(`Python script error: ${data.toString()}`);
       });
 
+      // Set a timeout for the Python process (e.g., 5 minutes)
+      const timeout = setTimeout(() => {
+        pythonProcess.kill();
+        console.error('Python script execution timed out');
+        res.status(504).json({ error: 'Scraping process timed out' });
+      }, 300000); // 5 minutes
+
       pythonProcess.on('close', async (code) => {
+        clearTimeout(timeout);
         if (code === 0) {
           const excelPath = path.join(process.cwd(), `${profile}_instagram_posts.xlsx`);
           console.log(`Attempting to read file from: ${excelPath}`);
@@ -52,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     } catch (error) {
       console.error('An error occurred:', error);
-      res.status(500).json({ error: 'An error occurred while scraping' });
+      res.status(500).json({ error: 'An error occurred while scraping', details: error.message });
     }
   } else {
     res.setHeader('Allow', ['POST']);
