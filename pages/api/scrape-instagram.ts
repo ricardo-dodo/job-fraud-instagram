@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { exec } from 'child_process';
 import path from 'path';
-import fs from 'fs/promises';
+import clientPromise from '../../lib/mongodb';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'POST') {
@@ -16,52 +16,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const pythonProcess = exec(`python3 ${scriptPath} ${profile}`);
 
-      let output = '';
-      let errorOutput = '';
-
       pythonProcess.stdout.on('data', (data) => {
-        output += data.toString();
-        console.log(`Python script output: ${data.toString()}`);
+        console.log(`Python script output: ${data}`);
       });
 
       pythonProcess.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-        console.error(`Python script error: ${data.toString()}`);
+        console.error(`Python script error: ${data}`);
       });
 
-      // Set a timeout for the Python process (e.g., 5 minutes)
-      const timeout = setTimeout(() => {
-        pythonProcess.kill();
-        console.error('Python script execution timed out');
-        res.status(504).json({ error: 'Scraping process timed out' });
-      }, 300000); // 5 minutes
-
       pythonProcess.on('close', async (code) => {
-        clearTimeout(timeout);
+        console.log(`Python script exited with code ${code}`);
         if (code === 0) {
-          const excelPath = path.join(process.cwd(), `${profile}_instagram_posts.xlsx`);
-          console.log(`Attempting to read file from: ${excelPath}`);
-          
-          try {
-            const data = await fs.readFile(excelPath);
-            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            res.setHeader('Content-Disposition', `attachment; filename=${profile}_instagram_posts.xlsx`);
-            res.send(data);
-
-            // Delete the file after sending
-            await fs.unlink(excelPath);
-          } catch (err) {
-            console.error('Error reading or deleting file:', err);
-            res.status(500).json({ error: 'Error reading or deleting file', details: err.message });
-          }
+          const client = await clientPromise;
+          const db = client.db('instagram_scraper');
+          const collection = db.collection('scraped_data');
+          const data = await collection.find({ profile }).toArray();
+          res.status(200).json({ message: 'Scraping completed', data });
         } else {
-          console.error('Python script error:', errorOutput);
-          res.status(500).json({ error: 'Error occurred during scraping', details: errorOutput });
+          res.status(500).json({ error: 'Scraping process failed' });
         }
       });
     } catch (error) {
       console.error('An error occurred:', error);
-      res.status(500).json({ error: 'An error occurred while scraping', details: error.message });
+      res.status(500).json({ error: 'An error occurred while starting the scraping process' });
     }
   } else {
     res.setHeader('Allow', ['POST']);

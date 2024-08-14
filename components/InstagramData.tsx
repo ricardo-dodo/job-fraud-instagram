@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 interface InstagramDataProps {
-  data: any[][];
+  data: any[];
 }
 
 const TextWithShowMore = ({ text, maxLength = 100 }) => {
@@ -39,55 +39,12 @@ const ViewPostButton = ({ url }: { url: string }) => (
 
 export default function InstagramData({ data }: InstagramDataProps) {
   const [currentPage, setCurrentPage] = useState(1);
-  const [processedData, setProcessedData] = useState([]);
   const itemsPerPage = 5;
 
-  useEffect(() => {
-    if (data && data.length > 1) {
-      const headers = data[0];
-      const rows = data.slice(1);
-      const combinedRows = [];
-      const seenPosts = new Set();
-
-      rows.forEach((row) => {
-        const rowData = {};
-        headers.forEach((header, index) => {
-          rowData[header] = row[index] || '';
-        });
-
-        const postKey = `${rowData['Post URL']}-${rowData['Post Content']}-${rowData['OCR Text']}`;
-        if (!seenPosts.has(postKey)) {
-          seenPosts.add(postKey);
-          combinedRows.push({
-            ...rowData,
-            comments: [{
-              username: rowData['Comment Username'],
-              text: rowData['Comment Text']
-            }]
-          });
-        } else {
-          const existingRow = combinedRows.find(r => 
-            r['Post URL'] === rowData['Post URL'] &&
-            r['Post Content'] === rowData['Post Content'] &&
-            r['OCR Text'] === rowData['OCR Text']
-          );
-          if (existingRow) {
-            existingRow.comments.push({
-              username: rowData['Comment Username'],
-              text: rowData['Comment Text']
-            });
-          }
-        }
-      });
-
-      setProcessedData(combinedRows);
-    }
-  }, [data]);
-
-  const pageCount = Math.ceil(processedData.length / itemsPerPage);
+  const pageCount = Math.ceil(data.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = processedData.slice(indexOfFirstItem, indexOfLastItem);
+  const currentItems = data.slice(indexOfFirstItem, indexOfLastItem);
 
   const renderTableHeader = () => (
     <tr>
@@ -99,20 +56,20 @@ export default function InstagramData({ data }: InstagramDataProps) {
   );
 
   const renderTableRows = () => {
-    return currentItems.map((row, rowIndex) => (
-      <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700'}>
+    return currentItems.map((item, index) => (
+      <tr key={index} className={index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700'}>
         <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
-          <ViewPostButton url={row['Post URL']} />
+          <ViewPostButton url={item.url} />
         </td>
         <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
-          <TextWithShowMore text={row['Post Content']} maxLength={100} />
+          <TextWithShowMore text={item.content} maxLength={100} />
         </td>
         <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
-          <TextWithShowMore text={row['OCR Text']} maxLength={100} />
+          <TextWithShowMore text={item.ocr_text} maxLength={100} />
         </td>
         <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
-          {row.comments.map((comment, index) => (
-            <div key={index} className="mb-2">
+          {item.comments && item.comments.map((comment, commentIndex) => (
+            <div key={commentIndex} className="mb-2">
               <strong>{comment.username}:</strong> {comment.text}
             </div>
           ))}

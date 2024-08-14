@@ -10,7 +10,7 @@ const Sidebar = () => {
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: FaHome },
     { path: '/instagram-scraper', label: 'Instagram Scraper', icon: FaInstagram },
-    { path: '/view-data', label: 'View Data', icon: FaChartBar },
+    { path: '/view-all-data', label: 'View All Data', icon: FaChartBar },
   ]
 
   return (

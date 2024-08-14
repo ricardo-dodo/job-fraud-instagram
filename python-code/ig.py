@@ -10,7 +10,7 @@ import easyocr
 import io
 import numpy as np
 import cv2
-from openpyxl import Workbook
+from pymongo import MongoClient
 import sys
 
 class InstagramScraper:
@@ -18,7 +18,6 @@ class InstagramScraper:
         load_dotenv()
         self.BASE_URL = "https://www.instagram.com"
         self.PROFILE = profile
-        self.CSV_FILE = f"{profile}_instagram_posts.csv"
         self.USERNAME = os.getenv('INSTAGRAM_USERNAME')
         self.PASSWORD = os.getenv('INSTAGRAM_PASSWORD')
         self.PROFILE_URL = f"{self.BASE_URL}/{self.PROFILE}/"
@@ -159,10 +158,7 @@ class InstagramScraper:
             logging.error("No posts found or couldn't open preview. Ending extraction process.")
             return None
         
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.append(['Post URL', 'Post Content', 'OCR Text', 'Comment Username', 'Comment Text'])
-
+        posts_data = []
         post_count = 0
         max_posts = 2  # Increase this number to scrape more posts
 
@@ -171,22 +167,7 @@ class InstagramScraper:
             
             post_data = await self.extract_post_data(page)
             if post_data:
-                if post_data['comments']:
-                    for comment in post_data['comments']:
-                        sheet.append([
-                            post_data['url'],
-                            post_data['content'],
-                            post_data['ocr_text'],
-                            comment['username'],
-                            comment['text']
-                        ])
-                else:
-                    sheet.append([
-                        post_data['url'],
-                        post_data['content'],
-                        post_data['ocr_text'],
-                        '', ''  # Empty fields for comment data
-                    ])
+                posts_data.append(post_data)
                 logging.info(f"Processed post {post_count + 1} with {len(post_data['comments'])} comments")
             else:
                 logging.error(f"Failed to process post {post_count + 1}")
@@ -204,11 +185,7 @@ class InstagramScraper:
 
         logging.info(f"Finished processing {post_count} posts")
         
-        excel_file = io.BytesIO()
-        workbook.save(excel_file)
-        excel_file.seek(0)
-        
-        return excel_file
+        return posts_data
 
     async def run(self):
         async with async_playwright() as p:
@@ -221,9 +198,9 @@ class InstagramScraper:
                 logging.info("Starting login process")
                 await self.login(page)
                 logging.info("Login successful, starting data extraction")
-                excel_file = await self.extract_and_download_posts(page)
+                data = await self.extract_and_download_posts(page)
                 logging.info("Data extraction complete")
-                return excel_file
+                return data
             except Exception as e:
                 logging.error(f"An error occurred: {str(e)}")
                 return None
@@ -231,17 +208,27 @@ class InstagramScraper:
                 await browser.close()
 
 def scrape_profile(profile):
-    scraper = InstagramScraper(profile)
-    excel_file = asyncio.run(scraper.run())
-    if excel_file:
-        file_path = os.path.abspath(f"{profile}_instagram_posts.xlsx")
-        with open(file_path, "wb") as f:
-            f.write(excel_file.getvalue())
-        print(f"Data saved to {file_path}")
-        return file_path
-    else:
-        print("Failed to scrape data")
-        return None
+    try:
+        scraper = InstagramScraper(profile)
+        data = asyncio.run(scraper.run())
+        if data:
+            client = MongoClient(os.getenv('MONGODB_URI'))
+            db = client['instagram_scraper']
+            collection = db['scraped_data']
+            
+            # Add profile name to each document
+            for item in data:
+                item['profile'] = profile
+            
+            result = collection.insert_many(data)
+            print(f"Inserted {len(result.inserted_ids)} documents into MongoDB for profile: {profile}")
+            return True
+        else:
+            print(f"No data was scraped for profile: {profile}")
+            return False
+    except Exception as e:
+        print(f"An error occurred during scraping: {str(e)}")
+        return False
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -249,9 +236,9 @@ if __name__ == "__main__":
         sys.exit(1)
     
     profile = sys.argv[1]
-    file_path = scrape_profile(profile)
+    success = scrape_profile(profile)
     
-    if file_path:
-        print(f"Excel file created at: {file_path}")
+    if success:
+        print(f"Data for {profile} successfully scraped and stored in MongoDB")
     else:
-        print("No data was scraped, no file created.")
+        print(f"Failed to scrape data for {profile}")

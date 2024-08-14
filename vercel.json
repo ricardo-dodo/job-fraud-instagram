@@ -1,0 +1,7 @@
+{
+    "functions": {
+      "api/scrape-instagram.ts": {
+        "maxDuration": 300
+      }
+    }
+  }
