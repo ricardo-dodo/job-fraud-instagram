@@ -1,3 +1,4 @@
+from flask import Flask, request, jsonify
 import csv
 import time
 import os
@@ -12,6 +13,8 @@ import numpy as np
 import cv2
 from pymongo import MongoClient
 import sys
+
+app = Flask(__name__)
 
 class InstagramScraper:
     def __init__(self, profile):
@@ -207,7 +210,12 @@ class InstagramScraper:
             finally:
                 await browser.close()
 
-def scrape_profile(profile):
+@app.route('/scrape', methods=['POST'])
+def scrape_profile():
+    profile = request.json.get('profile')
+    if not profile:
+        return jsonify({"error": "Profile is required"}), 400
+
     try:
         scraper = InstagramScraper(profile)
         data = asyncio.run(scraper.run())
@@ -221,24 +229,11 @@ def scrape_profile(profile):
                 item['profile'] = profile
             
             result = collection.insert_many(data)
-            print(f"Inserted {len(result.inserted_ids)} documents into MongoDB for profile: {profile}")
-            return True
+            return jsonify({"message": f"Inserted {len(result.inserted_ids)} documents into MongoDB for profile: {profile}"}), 200
         else:
-            print(f"No data was scraped for profile: {profile}")
-            return False
+            return jsonify({"error": f"No data was scraped for profile: {profile}"}), 500
     except Exception as e:
-        print(f"An error occurred during scraping: {str(e)}")
-        return False
+        return jsonify({"error": f"An error occurred during scraping: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python ig.py <instagram_profile>")
-        sys.exit(1)
-    
-    profile = sys.argv[1]
-    success = scrape_profile(profile)
-    
-    if success:
-        print(f"Data for {profile} successfully scraped and stored in MongoDB")
-    else:
-        print(f"Failed to scrape data for {profile}")
+    app.run(debug=True)

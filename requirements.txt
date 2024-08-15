@@ -2,3 +2,7 @@ python-dotenv
 playwright
 easyocr
 logging
+flask
+pymongo
+numpy
+opencv-python-headless

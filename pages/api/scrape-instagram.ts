@@ -1,7 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { exec } from 'child_process';
-import path from 'path';
-import clientPromise from '../../lib/mongodb';
+import fetch from 'node-fetch';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'POST') {
@@ -11,31 +9,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Profile name is required' });
       }
 
-      const scriptPath = path.join(process.cwd(), 'python-code', 'ig.py');
-      console.log(`Executing Python script: ${scriptPath}`);
-
-      const pythonProcess = exec(`python3 ${scriptPath} ${profile}`);
-
-      pythonProcess.stdout.on('data', (data) => {
-        console.log(`Python script output: ${data}`);
+      const flaskUrl = 'http://localhost:5000/scrape'; // Update with your Flask server URL
+      const response = await fetch(flaskUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ profile }),
       });
 
-      pythonProcess.stderr.on('data', (data) => {
-        console.error(`Python script error: ${data}`);
-      });
+      if (!response.ok) {
+        throw new Error(`Flask server responded with status ${response.status}`);
+      }
 
-      pythonProcess.on('close', async (code) => {
-        console.log(`Python script exited with code ${code}`);
-        if (code === 0) {
-          const client = await clientPromise;
-          const db = client.db('instagram_scraper');
-          const collection = db.collection('scraped_data');
-          const data = await collection.find({ profile }).toArray();
-          res.status(200).json({ message: 'Scraping completed', data });
-        } else {
-          res.status(500).json({ error: 'Scraping process failed' });
-        }
-      });
+      const result = await response.json();
+      res.status(200).json(result);
     } catch (error) {
       console.error('An error occurred:', error);
       res.status(500).json({ error: 'An error occurred while starting the scraping process' });
