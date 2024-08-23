@@ -25,7 +25,7 @@
     "start-next": "next start",
     "lint": "next lint",
     "install-py-deps": "pip install -r requirements.txt",
-    "start-flask": "FLASK_APP=python-code/ig.py flask run"
+    "start-flask": "FLASK_APP=python-code/app.py flask run"
   },
   "devDependencies": {
     "@types/node": "^22.1.0",

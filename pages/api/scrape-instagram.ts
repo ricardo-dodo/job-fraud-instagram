@@ -9,7 +9,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Profile name is required' });
       }
 
-      const flaskUrl = 'http://localhost:5000/scrape'; // Update with your Flask server URL
+      const flaskUrl = 'http://127.0.0.1:5000/scrape'; // Update with your Flask server URL
       const response = await fetch(flaskUrl, {
         method: 'POST',
         headers: {
